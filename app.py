@@ -5,34 +5,33 @@ from twilio.twiml.messaging_response import MessagingResponse
 
 app = Flask(__name__)
 
-# تخزين مؤقت لحالة المستخدمين في الذاكرة (Memory Session)
 user_sessions = {}
 
-# قراءة المتغيرات من بيئة التشغيل (Render)
-CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY")
+# المفاتيح الجديدة من البيئة
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 MAKE_WEBHOOK_URL = os.environ.get("MAKE_WEBHOOK_URL")
 
-CLAUDE_URL = "https://api.anthropic.com/v1/messages"
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-def ask_claude(system_prompt, user_message):
-    """دالة للتحدث مع Claude API بالعامية المصرية وبثبات"""
+def ask_ai(system_prompt, user_message):
     headers = {
-        "x-api-key": CLAUDE_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json"
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
     }
     data = {
-        "model": "claude-3-5-sonnet-20241022",
-        "max_tokens": 300,
-        "system": system_prompt,
-        "messages": [{"role": "user", "content": user_message}]
+        "model": "llama-3.3-70b-versatile",  # نموذج قوي وسريع جداً ومجاني
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message}
+        ],
+        "max_tokens": 300
     }
     try:
-        response = requests.post(CLAUDE_URL, headers=headers, json=data)
+        response = requests.post(GROQ_URL, headers=headers, json=data)
         if response.status_code == 200:
-            return response.json()['content'][0]['text']
+            return response.json()['choices'][0]['message']['content']
     except Exception as e:
-        print(f"Error calling Claude: {e}")
+        print(f"Error calling AI: {e}")
     return "عذراً يا فندم، واجهت مشكلة صغيرة. ممكن تبعت رسالتك تاني؟"
 
 @app.route("/webhook", methods=["POST"])
@@ -42,11 +41,10 @@ def webhook():
     
     resp = MessagingResponse()
     
-    # لو المستخدم جديد، نبدأ معاه المحادثة والأسئلة
     if from_number not in user_sessions:
         user_sessions[from_number] = {"step": "welcome"}
         welcome_prompt = "أنت مساعد عيادة تغذية ذكي تتحدث بالعامية المصرية الفخمة والودية جداً. رحب بالعميل واطلب منه بكل ذوق يعرفنا باسمه الكريم للبدء."
-        reply = ask_claude(welcome_prompt, user_msg)
+        reply = ask_ai(welcome_prompt, user_msg)
         user_sessions[from_number]["step"] = "get_name"
         resp.message(reply)
         return str(resp)
@@ -54,47 +52,44 @@ def webhook():
     state = user_sessions[from_number]
     step = state.get("step")
     
-    # مرحلة تجميع البيانات خطوة بخطوة
     if step == "get_name":
         state["name"] = user_msg
         state["step"] = "get_age"
-        reply = ask_claude("العميل كتب اسمه. اطلب منه السن بالعامية المصرية وبطريقة لبقة.", user_msg)
+        reply = ask_ai("العميل كتب اسمه. اطلب منه السن بالعامية المصرية وبطريقة لبقة.", user_msg)
         
     elif step == "get_age":
         state["age"] = user_msg
         state["step"] = "get_height"
-        reply = ask_claude("العميل كتب سنه. اطلب منه الطول بالسنتيمتر بالعامية المصرية.", user_msg)
+        reply = ask_ai("العميل كتب سنه. اطلب منه الطول بالسنتيمتر بالعامية المصرية.", user_msg)
         
     elif step == "get_height":
         state["height"] = user_msg
         state["step"] = "get_weight"
-        reply = ask_claude("العميل كتب طوله. اطلب منه الوزن الحالي بالكيلوجرام بالعامية المصرية.", user_msg)
+        reply = ask_ai("العميل كتب طوله. اطلب منه الوزن الحالي بالكيلوجرام بالعامية المصرية.", user_msg)
         
     elif step == "get_weight":
         state["weight"] = user_msg
         state["step"] = "get_goal"
-        reply = ask_claude("العميل كتب وزنه. اسأله عن هدفه (تخسيس، زيادة عضلات، تثبيت وزن) بالعامية المصرية.", user_msg)
+        reply = ask_ai("العميل كتب وزنه. اسأله عن هدفه (تخسيس، زيادة عضلات، تثبيت وزن) بالعامية المصرية.", user_msg)
         
     elif step == "get_goal":
         state["goal"] = user_msg
         state["step"] = "get_health"
-        reply = ask_claude("العميل كتب هدفه. اسأله لو بيعاني من أي مشاكل صحية أو أمراض مزمنة أو إصابات (واكتب له إنه لو مفيش يكتب 'لا يوجد') بالعامية المصرية.", user_msg)
+        reply = ask_ai("العميل كتب هدفه. اسأله لو بيعاني من أي مشاكل صحية أو أمراض مزمنة أو إصابات (واكتب له إنه لو مفيش يكتب 'لا يوجد') بالعامية المصرية.", user_msg)
         
     elif step == "get_health":
         state["health"] = user_msg
         state["step"] = "get_inbody"
-        reply = ask_claude("العميل كتب حالته الصحية. اسأله 'السؤال الاختياري الصايع' بالعامية المصرية: لو عمل تحليل InBody قريب يكتب نسبة الدهون ونسبة العضلات، ولو مش عارفهم يكتب كلمة 'تخطي'.", user_msg)
+        reply = ask_ai("العميل كتب حالته الصحية. اسأله: لو عمل تحليل InBody قريب يكتب نسبة الدهون ونسبة العضلات، ولو مش عارفهم يكتب كلمة 'تخطي'.", user_msg)
         
     elif step == "get_inbody":
-        # معالجة الـ InBody الفخم والاختياري
         if "تخطي" in user_msg or "لا" in user_msg:
             state["fat"] = "غير معروف"
             state["muscle"] = "غير معروف"
         else:
             state["fat"] = user_msg
-            state["muscle"] = "مدمجة مع الدهون"
+            state["muscle"] = "مدمجة"
             
-        # إرسال البيانات فوراً لـ Make.com ليرميها في الـ Google Sheet
         payload = {
             "name": state.get("name"),
             "age": state.get("age"),
@@ -111,9 +106,8 @@ def webhook():
         except Exception as e:
             print(f"Error sending to Make Webhook: {e}")
             
-        # إنهاء الجلسة وإرسال التلخيص الفخم
-        reply = ask_claude("العميل أكمل كافة البيانات وتم حفظها في النظام بنجاح. صغ له رسالة ختامية فخمة ومبهجة بالعامية المصرية تخبره أن بياناته أصبحت عند الدكتور وجاري تجهيز ملفه.", "")
-        del user_sessions[from_number] # مسح الجلسة لتبدأ من جديد المرة القادمة
+        reply = ask_ai("العميل أكمل كافة البيانات وتم حفظها في النظام بنجاح. صغ له رسالة ختامية فخمة ومبهجة بالعامية المصرية تخبره أن بياناته أصبحت عند الدكتور وجاري تجهيز ملفه.", "")
+        del user_sessions[from_number]
         
     resp.message(reply)
     return str(resp)
